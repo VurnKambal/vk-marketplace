@@ -3,9 +3,11 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Listing } from "@/lib/types";
-import { Send, MessageCircle, Sparkles } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { Send, MessageCircle, Sparkles, Lock } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
 
 interface MessageSellerProps {
   listing: Listing;
@@ -14,11 +16,74 @@ interface MessageSellerProps {
 export function MessageSeller({ listing }: MessageSellerProps) {
   const [message, setMessage] = useState("Hey! I'm interested in your item. Is it still available? 😊");
   const [isOpen, setIsOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSendMessage = () => {
-    // Handle message sending logic here
-    console.log(`Sending message to ${listing.seller.name}: ${message}`);
-    setIsOpen(false);
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+    };
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Check if current user is the seller
+  const isOwnListing = user?.email === listing.seller.email;
+
+  const handleSendMessage = async () => {
+    if (!user) {
+      alert('Please sign in to send messages');
+      return;
+    }
+
+    if (isOwnListing) {
+      alert("You can't message yourself on your own listing");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Insert message into database with read: false by default
+      const { error } = await supabase
+        .from('messages')
+        .insert([
+          {
+            listing_id: listing.id,
+            buyer_email: user.email,
+            seller_email: listing.seller.email,
+            buyer_id: user.id,
+            message: message.trim(),
+            read: false // Ensure messages start as unread
+          }
+        ]);
+
+      if (error) {
+        console.error('Error sending message:', error);
+        alert('Failed to send message. Please try again.');
+        return;
+      }
+
+      alert('Message sent successfully! The seller will be notified.');
+      setIsOpen(false);
+      setMessage("Hey! I'm interested in your item. Is it still available? 😊");
+      
+      // Trigger a custom event to update notifications
+      window.dispatchEvent(new CustomEvent('messagesChanged'));
+    } catch (error) {
+      console.error('Error sending message:', error);
+      alert('Failed to send message. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const quickMessages = [
@@ -28,84 +93,82 @@ export function MessageSeller({ listing }: MessageSellerProps) {
     "When would be a good time to meet? ⏰"
   ];
 
+  // Don't show message button if user is the seller
+  if (isOwnListing) {
+    return null;
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-2xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 py-4 text-lg font-semibold group">
-          <MessageCircle className="w-5 h-5 mr-2 group-hover:animate-bounce" />
-          Send seller a message
-          <Sparkles className="w-4 h-4 ml-2 group-hover:animate-spin" />
+        <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 rounded-xl font-semibold py-3">
+          <MessageCircle className="w-5 h-5 mr-2" />
+          Message Seller
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg bg-gradient-to-br from-white to-blue-50 border-0 shadow-2xl rounded-3xl">
-        <DialogHeader className="text-center pb-4">
-          <DialogTitle className="text-2xl font-bold text-gray-800 flex items-center justify-center space-x-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-              <MessageCircle className="w-4 h-4 text-white" />
-            </div>
-            <span>Message {listing.seller.name}</span>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center space-x-2">
+            <MessageCircle className="w-5 h-5 text-blue-600" />
+            <span>Send Message</span>
           </DialogTitle>
         </DialogHeader>
         
-        <div className="space-y-6">
-          {/* Seller info card */}
-          <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-4 border border-blue-100">
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-lg">
-                  {listing.seller.name.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div>
-                <p className="font-semibold text-gray-800">{listing.seller.name}</p>
-                <p className="text-sm text-gray-600">Usually responds within 1 hour</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick message suggestions */}
+        <div className="space-y-4">
           <div>
-            <p className="text-sm font-medium text-gray-700 mb-3">Quick messages:</p>
-            <div className="grid grid-cols-1 gap-2">
+            <p className="text-sm text-gray-600 mb-3">
+              Send a message about: <span className="font-semibold">{listing.title}</span>
+            </p>
+            
+            {/* Quick message buttons */}
+            <div className="grid grid-cols-1 gap-2 mb-4">
               {quickMessages.map((quickMsg, index) => (
-                <button
+                <Button
                   key={index}
+                  variant="outline"
+                  size="sm"
                   onClick={() => setMessage(quickMsg)}
-                  className="text-left p-3 bg-white hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 border border-gray-200 hover:border-blue-300 rounded-xl transition-all duration-200 text-sm hover:shadow-md transform hover:scale-[1.02]"
+                  className="text-left justify-start h-auto py-2 px-3 hover:bg-blue-50 hover:border-blue-300 transition-colors text-sm"
                 >
                   {quickMsg}
-                </button>
+                </Button>
               ))}
             </div>
-          </div>
-
-          {/* Message input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Your message:</label>
+            
             <Textarea
+              placeholder="Type your message here..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type your message here..."
-              className="min-h-[120px] resize-none border-gray-200 focus:border-blue-500 focus:ring-blue-500 rounded-2xl bg-white/80 backdrop-blur-sm transition-all duration-300 focus:shadow-lg"
+              className="min-h-[100px] resize-none border-gray-300 focus:border-blue-500 focus:ring-blue-500 rounded-lg"
             />
           </div>
-
-          {/* Send button */}
-          <Button 
-            onClick={handleSendMessage} 
-            className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-2xl py-4 font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 group"
-          >
-            <Send className="w-5 h-5 mr-2 group-hover:translate-x-1 transition-transform duration-200" />
-            Send Message
-          </Button>
-        </div>
-
-        {/* Decorative elements */}
-        <div className="absolute top-4 right-4 opacity-20">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full animate-pulse"></div>
-        </div>
-        <div className="absolute bottom-4 left-4 opacity-10">
-          <div className="w-12 h-12 bg-gradient-to-br from-pink-400 to-yellow-500 rounded-full animate-bounce"></div>
+          
+          <div className="flex justify-end space-x-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsOpen(false)}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSendMessage} 
+              disabled={loading || !message.trim()}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {loading ? (
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Sending...</span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <Send className="w-4 h-4" />
+                  <span>Send Message</span>
+                </div>
+              )}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

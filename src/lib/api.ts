@@ -243,3 +243,114 @@ export async function getUserListings(): Promise<DatabaseListing[]> {
 
   return data || []
 }
+
+// Message-related API functions
+export async function getUserMessages(): Promise<any[]> {
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    throw new Error('User must be logged in to view messages')
+  }
+
+  try {
+    // Get messages where user is either buyer or seller
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select(`
+        *,
+        listing:listings (
+          id,
+          title,
+          price,
+          image_urls
+        )
+      `)
+      .or(`buyer_email.eq.${user.email},seller_email.eq.${user.email}`)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching messages:', error)
+      return []
+    }
+
+    return messages || []
+  } catch (error) {
+    console.error('Error in getUserMessages:', error)
+    return []
+  }
+}
+
+export async function getMessagesForListing(listingId: string): Promise<any[]> {
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    throw new Error('User must be logged in')
+  }
+
+  try {
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('listing_id', listingId)
+      .or(`buyer_email.eq.${user.email},seller_email.eq.${user.email}`)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching listing messages:', error)
+      return []
+    }
+
+    return messages || []
+  } catch (error) {
+    console.error('Error in getMessagesForListing:', error)
+    return []
+  }
+}
+
+export async function markMessagesAsRead(messageIds: string[]): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    throw new Error('User must be logged in')
+  }
+
+  try {
+    const { error } = await supabase
+      .from('messages')
+      .update({ read: true })
+      .in('id', messageIds)
+      .or(`buyer_email.eq.${user.email},seller_email.eq.${user.email}`)
+
+    if (error) {
+      console.error('Error marking messages as read:', error)
+    }
+  } catch (error) {
+    console.error('Error in markMessagesAsRead:', error)
+  }
+}
+
+export async function getUnreadMessageCount(): Promise<number> {
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    return 0
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact' })
+      .eq('read', false)
+      .eq('seller_email', user.email) // Count messages sent TO the user (as seller)
+
+    if (error) {
+      console.error('Error getting unread count:', error)
+      return 0
+    }
+
+    return data?.length || 0
+  } catch (error) {
+    console.error('Error in getUnreadMessageCount:', error)
+    return 0
+  }
+}

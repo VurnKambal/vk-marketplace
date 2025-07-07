@@ -85,10 +85,10 @@ export function ListingCard({ listing }: ListingCardProps) {
 
   return (
     <div className="group block relative">
-      <Card className="overflow-hidden hover:shadow-2xl transition-all duration-500 cursor-pointer border-0 bg-white rounded-3xl transform hover:scale-[1.03] hover:-translate-y-2 relative">
+      <Card className="overflow-hidden hover:shadow-2xl transition-all duration-500 cursor-pointer border-0 bg-white rounded-2xl sm:rounded-3xl transform hover:scale-[1.03] hover:-translate-y-2 relative">
         {/* Image section with enhanced gradient and pattern */}
         <Link href={`/item/${listing.id}`} className="block">
-          <div className="aspect-square relative overflow-hidden rounded-t-3xl">
+          <div className="aspect-square relative overflow-hidden rounded-t-2xl sm:rounded-t-3xl">
             {imageUrl ? (
               <Image
                 src={imageUrl}
@@ -114,48 +114,48 @@ export function ListingCard({ listing }: ListingCardProps) {
             )}
             
             {/* Action buttons overlay */}
-            <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-all duration-300 delay-200">
-              <div className="flex space-x-2">
+            <div className="absolute top-2 sm:top-4 right-2 sm:right-4 opacity-0 group-hover:opacity-100 transition-all duration-300 delay-200">
+              <div className="flex space-x-1 sm:space-x-2">
                 <button
                   onClick={handleFavoriteClick}
                   disabled={loading}
-                  className={`w-8 h-8 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 disabled:opacity-50 ${
+                  className={`w-6 h-6 sm:w-8 sm:h-8 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 disabled:opacity-50 ${
                     isFavorited 
                       ? 'bg-red-500/90 text-white' 
                       : 'bg-white/20 text-white hover:bg-white/30'
                   }`}
                   title={isFavorited ? "Remove from favorites" : "Add to favorites"}
                 >
-                  <Heart className={`w-4 h-4 ${isFavorited ? 'fill-current' : ''}`} />
+                  <Heart className={`w-3 h-3 sm:w-4 sm:h-4 ${isFavorited ? 'fill-current' : ''}`} />
                 </button>
                 <button
                   onClick={handleViewClick}
-                  className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-all duration-200 hover:scale-110"
+                  className="w-6 h-6 sm:w-8 sm:h-8 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-all duration-200 hover:scale-110"
                   title="Quick preview"
                   aria-label="Quick preview"
                 >
-                  <Eye className="w-4 h-4 text-white" />
+                  <Eye className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
                 </button>
                 <button
                   onClick={handleShareClick}
-                  className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-all duration-200 hover:scale-110"
+                  className="w-6 h-6 sm:w-8 sm:h-8 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-all duration-200 hover:scale-110"
                   title="Share this listing"
                   aria-label="Share this listing"
                 >
-                  <Share2 className="w-4 h-4 text-white" />
+                  <Share2 className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
                 </button>
               </div>
             </div>
 
             {/* Price badge overlay */}
-            <div className="absolute top-4 left-4">
-              <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-3 py-1 rounded-2xl font-bold text-sm shadow-lg transform rotate-3 group-hover:rotate-0 transition-transform duration-300">
+            <div className="absolute top-2 sm:top-4 left-2 sm:left-4">
+              <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-2 py-1 sm:px-3 sm:py-1 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm shadow-lg transform rotate-3 group-hover:rotate-0 transition-transform duration-300">
                 ${listing.price.toLocaleString()}
               </div>
             </div>
 
             {/* View count badge */}
-            <div className="absolute bottom-4 left-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
               <div className="bg-black/50 backdrop-blur-sm text-white px-2 py-1 rounded-lg text-xs font-medium flex items-center space-x-1">
                 <Eye className="w-3 h-3" />
                 <span>{viewCount}</span>
@@ -165,17 +165,17 @@ export function ListingCard({ listing }: ListingCardProps) {
         </Link>
 
         <Link href={`/item/${listing.id}`} className="block">
-          <CardContent className="p-5 bg-gradient-to-b from-white to-gray-50">
-            <div className="space-y-3">
+          <CardContent className="p-3 sm:p-5 bg-gradient-to-b from-white to-gray-50">
+            <div className="space-y-2 sm:space-y-3">
               {/* Title with enhanced typography */}
-              <h3 className="font-bold text-lg text-gray-900 line-clamp-2 group-hover:text-blue-600 transition-colors duration-300 leading-tight">
+              <h3 className="font-bold text-sm sm:text-lg text-gray-900 line-clamp-2 group-hover:text-blue-600 transition-colors duration-300 leading-tight">
                 {listing.title}
               </h3>
               
               {/* Location with icon effect */}
               <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse"></div>
-                <p className="text-sm text-gray-600 font-medium">
+                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse"></div>
+                <p className="text-xs sm:text-sm text-gray-600 font-medium truncate">
                   {listing.location}
                 </p>
               </div>
@@ -185,13 +185,13 @@ export function ListingCard({ listing }: ListingCardProps) {
                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full font-medium">
                   {listing.createdAt}
                 </span>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1 sm:space-x-2">
                   <div className="flex items-center space-x-1">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping"></div>
+                    <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-green-500 rounded-full animate-ping"></div>
                     <span className="text-xs text-green-600 font-semibold">Available</span>
                   </div>
                   {isFavorited && (
-                    <Heart className="w-4 h-4 text-red-500 fill-current" />
+                    <Heart className="w-3 h-3 sm:w-4 sm:h-4 text-red-500 fill-current" />
                   )}
                 </div>
               </div>
@@ -200,7 +200,7 @@ export function ListingCard({ listing }: ListingCardProps) {
         </Link>
 
         {/* Subtle glow effect on hover */}
-        <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+        <div className="absolute inset-0 rounded-2xl sm:rounded-3xl bg-gradient-to-r from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
       </Card>
     </div>
   );
