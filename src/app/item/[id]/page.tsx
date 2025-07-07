@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getListing } from "@/lib/api";
 import { convertDatabaseListing, Listing, CATEGORIES } from "@/lib/types";
+import { favoritesUtils } from "@/lib/utils";
 import { ArrowLeft, Share2, Heart, MapPin, Clock, Star, Loader2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -24,6 +25,7 @@ export default function ItemDetailPage({ params }: ItemDetailPageProps) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [resolvedParams, setResolvedParams] = useState<{ id: string } | null>(null);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
 
   // Resolve async params
   useEffect(() => {
@@ -39,7 +41,12 @@ export default function ItemDetailPage({ params }: ItemDetailPageProps) {
         setError(null);
         const data = await getListing(resolvedParams.id);
         if (data) {
-          setListing(convertDatabaseListing(data));
+          const convertedListing = convertDatabaseListing(data);
+          setListing(convertedListing);
+          
+          // Check if listing is favorited
+          const isFav = await favoritesUtils.isFavorite(resolvedParams.id);
+          setIsFavorited(isFav);
         } else {
           setError('Listing not found');
         }
@@ -54,15 +61,39 @@ export default function ItemDetailPage({ params }: ItemDetailPageProps) {
     fetchListing();
   }, [resolvedParams]);
 
-  const handleFavoriteClick = () => {
-    setIsFavorited(prev => !prev);
-    // Add logic to save to favorites in the backend or local storage
+  const handleFavoriteClick = async () => {
+    if (!listing || favoriteLoading) return;
+    
+    try {
+      setFavoriteLoading(true);
+      
+      if (isFavorited) {
+        await favoritesUtils.removeFavorite(listing.id);
+        setIsFavorited(false);
+      } else {
+        await favoritesUtils.addFavorite(listing);
+        setIsFavorited(true);
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      alert('Please sign in to save items to your favorites');
+    } finally {
+      setFavoriteLoading(false);
+    }
   };
 
   const handleShareClick = () => {
     if (listing) {
-      navigator.clipboard.writeText(`Check out this listing: ${window.location.href}`);
-      alert('Listing URL copied to clipboard!');
+      if (navigator.share) {
+        navigator.share({
+          title: listing.title,
+          text: `Check out this ${listing.title} for $${listing.price}`,
+          url: window.location.href
+        });
+      } else {
+        navigator.clipboard.writeText(window.location.href);
+        alert('Listing URL copied to clipboard!');
+      }
     }
   };
 

@@ -8,19 +8,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CATEGORIES } from "@/lib/types";
 import { createListing, uploadImages } from "@/lib/api";
 import { listingSchema } from "@/lib/validation";
-import { ArrowLeft, Camera, X, Loader2 } from "lucide-react";
+import { supabase, signInWithGoogle } from "@/lib/supabase";
+import { ArrowLeft, Camera, X, Loader2, LogIn } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 
 type FormData = z.infer<typeof listingSchema>;
 
 export default function CreateListingPage() {
   const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -28,6 +32,7 @@ export default function CreateListingPage() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors }
   } = useForm<FormData>({
     resolver: zodResolver(listingSchema),
@@ -35,6 +40,60 @@ export default function CreateListingPage() {
       price: 0
     }
   });
+
+  // Check authentication and pre-fill user data
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+      
+      // Pre-fill form with user data if available
+      if (session?.user) {
+        const userData = session.user.user_metadata;
+        if (userData?.full_name) {
+          setValue('seller_name', userData.full_name);
+        }
+        if (session.user.email) {
+          setValue('seller_email', session.user.email);
+        }
+      }
+      
+      setAuthLoading(false);
+    };
+
+    checkAuth();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          const userData = session.user.user_metadata;
+          if (userData?.full_name) {
+            setValue('seller_name', userData.full_name);
+          }
+          if (session.user.email) {
+            setValue('seller_email', session.user.email);
+          }
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, [setValue]);
+
+  const handleSignIn = async () => {
+    try {
+      setAuthLoading(true);
+      await signInWithGoogle();
+    } catch (error) {
+      console.error('Error signing in:', error);
+      setSubmitError('Failed to sign in. Please try again.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -50,6 +109,11 @@ export default function CreateListingPage() {
   };
 
   const onSubmit = async (data: FormData) => {
+    if (!user) {
+      setSubmitError('You must be signed in to create a listing.');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setSubmitError(null);
@@ -83,6 +147,57 @@ export default function CreateListingPage() {
       setIsSubmitting(false);
     }
   };
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+        <Header />
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600 font-medium">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show sign-in prompt if not authenticated
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+        <Header />
+        
+        <div className="max-w-4xl mx-auto p-8">
+          <div className="text-center py-16">
+            <div className="w-24 h-24 bg-gradient-to-br from-blue-200 to-purple-300 rounded-full flex items-center justify-center mx-auto mb-6">
+              <LogIn className="w-12 h-12 text-blue-600" />
+            </div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Sign in to create a listing</h2>
+            <p className="text-gray-600 mb-8 max-w-md mx-auto">
+              You need to sign in with your Google account to create and manage listings on the marketplace.
+            </p>
+            <div className="space-y-4">
+              <Button 
+                onClick={handleSignIn}
+                disabled={authLoading}
+                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+              >
+                <LogIn className="w-4 h-4 mr-2" />
+                {authLoading ? 'Signing in...' : 'Sign In with Google'}
+              </Button>
+              <div>
+                <Link href="/" className="text-blue-600 hover:text-blue-700 font-medium">
+                  ← Back to Marketplace
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -294,7 +409,7 @@ export default function CreateListingPage() {
               <div className="pt-8">
                 <Button 
                   type="submit" 
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !user}
                   className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-2xl py-6 text-xl font-bold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
                   {isSubmitting ? (

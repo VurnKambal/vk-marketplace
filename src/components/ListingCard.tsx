@@ -3,7 +3,7 @@ import { Listing } from "@/lib/types";
 import Link from "next/link";
 import { Heart, Eye, Share2 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { favoritesUtils } from "@/lib/utils";
 
 interface ListingCardProps {
@@ -11,24 +11,49 @@ interface ListingCardProps {
 }
 
 export function ListingCard({ listing }: ListingCardProps) {
-  const [isFavorited, setIsFavorited] = useState(() => 
-    favoritesUtils.isFavorite(listing.id)
-  );
+  const [isFavorited, setIsFavorited] = useState(false);
   const [viewCount, setViewCount] = useState(Math.floor(Math.random() * 50) + 5);
+  const [loading, setLoading] = useState(false);
 
   const hasImages = listing.images && listing.images.length > 0;
   const imageUrl = hasImages ? listing.images[0] : null;
 
-  const handleFavoriteClick = (e: React.MouseEvent) => {
+  // Check if listing is favorited on component mount
+  useEffect(() => {
+    const checkFavoriteStatus = async () => {
+      try {
+        const isFav = await favoritesUtils.isFavorite(listing.id);
+        setIsFavorited(isFav);
+      } catch (error) {
+        console.error('Error checking favorite status:', error);
+      }
+    };
+
+    checkFavoriteStatus();
+  }, [listing.id]);
+
+  const handleFavoriteClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
-    if (isFavorited) {
-      favoritesUtils.removeFavorite(listing.id);
-      setIsFavorited(false);
-    } else {
-      favoritesUtils.addFavorite(listing);
-      setIsFavorited(true);
+    if (loading) return;
+    
+    try {
+      setLoading(true);
+      
+      if (isFavorited) {
+        await favoritesUtils.removeFavorite(listing.id);
+        setIsFavorited(false);
+      } else {
+        await favoritesUtils.addFavorite(listing);
+        setIsFavorited(true);
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      // Show user-friendly error message
+      alert('Please sign in to save items to your favorites');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -93,7 +118,8 @@ export function ListingCard({ listing }: ListingCardProps) {
               <div className="flex space-x-2">
                 <button
                   onClick={handleFavoriteClick}
-                  className={`w-8 h-8 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 ${
+                  disabled={loading}
+                  className={`w-8 h-8 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 disabled:opacity-50 ${
                     isFavorited 
                       ? 'bg-red-500/90 text-white' 
                       : 'bg-white/20 text-white hover:bg-white/30'

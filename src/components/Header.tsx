@@ -1,12 +1,14 @@
 'use client';
 
-import { Search, Bell, Heart, User, Menu, ShoppingBag } from "lucide-react";
+import { Search, Bell, Heart, UserIcon, Menu, ShoppingBag, LogIn, LogOut } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { searchUtils, favoritesUtils } from "@/lib/utils";
+import { searchUtils, favoritesUtils, searchCategories } from "@/lib/utils";
+import { supabase, signInWithGoogle, signOut } from "@/lib/supabase";
+import type { User } from "@supabase/supabase-js";
 
 interface HeaderProps {
   onSearch?: (query: string) => void;
@@ -14,29 +16,70 @@ interface HeaderProps {
 
 export function Header({ onSearch }: HeaderProps) {
   const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [favoriteCount, setFavoriteCount] = useState(0);
+  const [loading, setLoading] = useState(false);
 
   const searchRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Get initial session
+    const getSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+    };
+    getSession();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          // Update favorite count when user logs in
+          updateFavoriteCount();
+        } else {
+          setFavoriteCount(0);
+        }
+      }
+    );
+
+    // Initialize data
     setRecentSearches(searchUtils.getRecentSearches());
-    setFavoriteCount(favoritesUtils.getFavorites().length);
+    if (user) {
+      updateFavoriteCount();
+    }
 
     // Listen for favorites changes
-    const handleFavoritesChange = (event: any) => {
-      setFavoriteCount(event.detail.favorites.length);
+    const handleFavoritesChange = () => {
+      if (user) {
+        updateFavoriteCount();
+      }
     };
 
     window.addEventListener('favoritesChanged', handleFavoritesChange);
-    return () => window.removeEventListener('favoritesChanged', handleFavoritesChange);
-  }, []);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('favoritesChanged', handleFavoritesChange);
+    };
+  }, [user]);
+
+  const updateFavoriteCount = async () => {
+    try {
+      const favorites = await favoritesUtils.getFavorites();
+      setFavoriteCount(favorites.length);
+    } catch (error) {
+      console.error('Error updating favorite count:', error);
+    }
+  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -56,14 +99,44 @@ export function Header({ onSearch }: HeaderProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const handleSignIn = async () => {
+    try {
+      setLoading(true);
+      await signInWithGoogle();
+    } catch (error) {
+      console.error('Error signing in:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      setLoading(true);
+      await signOut();
+      setShowUserMenu(false);
+      router.push('/');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSearch = (query: string) => {
     if (query.trim()) {
       searchUtils.addRecentSearch(query.trim());
       setRecentSearches(searchUtils.getRecentSearches());
       setShowSearchSuggestions(false);
-      // Navigate to search results (you would implement this route)
+      onSearch?.(query.trim());
       router.push(`/?search=${encodeURIComponent(query.trim())}`);
     }
+  };
+
+  const handleCategorySearch = (categoryId: string) => {
+    setSearchQuery('');
+    setShowSearchSuggestions(false);
+    router.push(`/?category=${categoryId}`);
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -116,13 +189,19 @@ export function Header({ onSearch }: HeaderProps) {
             />
           </form>
 
-          {/* Search Suggestions Dropdown */}
+          {/* Enhanced Search Suggestions Dropdown */}
           {showSearchSuggestions && (
             <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-20 max-h-80 overflow-y-auto">
               {searchQuery.length > 0 && (
-                <div className="px-4 py-2 text-sm text-gray-500 border-b border-gray-100">
-                  Search for "{searchQuery}"
-                </div>
+                <button
+                  onClick={() => handleSearch(searchQuery)}
+                  className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
+                >
+                  <div className="flex items-center space-x-3">
+                    <Search className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-700">Search for "{searchQuery}"</span>
+                  </div>
+                </button>
               )}
               
               {searchQuery.length === 0 && recentSearches.length > 0 && (
@@ -145,31 +224,22 @@ export function Header({ onSearch }: HeaderProps) {
                 </>
               )}
 
-              {searchQuery.length > 0 && (
-                <>
-                  <div className="px-4 py-2 text-sm font-semibold text-gray-700 border-b border-gray-100">
-                    Quick Categories
-                  </div>
-                  { [
-                    'Electronics',
-                    'Textbooks',
-                    'Furniture',
-                    'Clothing',
-                    'Sports Equipment'
-                  ].map((category) => (
-                    <button
-                      key={category}
-                      onClick={() => {
-                        setSearchQuery(category);
-                        handleSearch(category);
-                      }}
-                      className="text-left px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
-                    >
-                      {category}
-                    </button>
-                  ))}
-                </>
-              )}
+              {/* Enhanced Categories */}
+              <div className="px-4 py-2 text-sm font-semibold text-gray-700 border-b border-gray-100">
+                Browse Categories
+              </div>
+              <div className="grid grid-cols-2 gap-1 p-2">
+                {searchCategories.map((category) => (
+                  <button
+                    key={category.id}
+                    onClick={() => handleCategorySearch(category.id)}
+                    className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors text-left"
+                  >
+                    <span className="text-lg">{category.emoji}</span>
+                    <span>{category.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -188,92 +258,131 @@ export function Header({ onSearch }: HeaderProps) {
             </Link>
           </Button>
 
-          {/* Notifications */}
-          <div className="relative" ref={notificationRef}>
-            <button
-              onClick={() => setShowNotifications(!showNotifications)}
-              className="relative w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-300 hover:scale-110"
-            >
-              <Bell className="w-5 h-5 text-white" />
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
-                2
-              </span>
-            </button>
-
-            {showNotifications && (
-              <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-20">
-                <div className="px-4 py-3 border-b border-gray-100">
-                  <h3 className="font-semibold text-gray-900">Notifications</h3>
-                </div>
-                <div className="max-h-64 overflow-y-auto">
-                  <div className="px-4 py-3 hover:bg-gray-50 border-b border-gray-100">
-                    <p className="text-sm font-medium text-gray-900">New message received</p>
-                    <p className="text-xs text-gray-500">Someone is interested in your iPhone listing</p>
-                  </div>
-                  <div className="px-4 py-3 hover:bg-gray-50">
-                    <p className="text-sm font-medium text-gray-900">Price drop alert</p>
-                    <p className="text-xs text-gray-500">MacBook Pro price dropped by $50</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Favorites */}
-          <Link
-            href="/favorites"
-            className="relative w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-300 hover:scale-110"
-          >
-            <Heart className="w-5 h-5 text-white" />
-            {favoriteCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
-                {favoriteCount > 9 ? '9+' : favoriteCount}
-              </span>
-            )}
-          </Link>
-
-          {/* User Menu */}
-          <div className="relative" ref={userMenuRef}>
-            <button
-              onClick={() => setShowUserMenu(!showUserMenu)}
-              className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 flex items-center justify-center"
-            >
-              <User className="w-5 h-5 text-white" />
-            </button>
-
-            {showUserMenu && (
-              <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-20">
-                <Link
-                  href="/profile"
-                  className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          {user && (
+            <>
+              {/* Notifications */}
+              <div className="relative" ref={notificationRef}>
+                <button
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className="relative w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-300 hover:scale-110"
                 >
-                  My Profile
-                </Link>
-                <Link
-                  href="/my-listings"
-                  className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  My Listings
-                </Link>
-                <Link
-                  href="/favorites"
-                  className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Saved Items
-                </Link>
-                <hr className="my-2 border-gray-200" />
-                <Link
-                  href="/settings"
-                  className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Settings
-                </Link>
-                <button className="block w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors">
-                  Sign Out
+                  <Bell className="w-5 h-5 text-white" />
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                    2
+                  </span>
                 </button>
+
+                {showNotifications && (
+                  <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-20">
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <h3 className="font-semibold text-gray-900">Notifications</h3>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      <div className="px-4 py-3 hover:bg-gray-50 border-b border-gray-100">
+                        <p className="text-sm font-medium text-gray-900">New message received</p>
+                        <p className="text-xs text-gray-500">Someone is interested in your iPhone listing</p>
+                      </div>
+                      <div className="px-4 py-3 hover:bg-gray-50">
+                        <p className="text-sm font-medium text-gray-900">Price drop alert</p>
+                        <p className="text-xs text-gray-500">MacBook Pro price dropped by $50</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+
+              {/* Favorites */}
+              <Link
+                href="/favorites"
+                className="relative w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-300 hover:scale-110"
+              >
+                <Heart className="w-5 h-5 text-white" />
+                {favoriteCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                    {favoriteCount > 9 ? '9+' : favoriteCount}
+                  </span>
+                )}
+              </Link>
+            </>
+          )}
+
+          {/* User Menu / Sign In */}
+          {user ? (
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 flex items-center justify-center"
+              >
+                {user.user_metadata?.avatar_url ? (
+                  <img 
+                    src={user.user_metadata.avatar_url} 
+                    alt="Profile" 
+                    className="w-full h-full rounded-full object-cover"
+                  />
+                ) : (
+                  <UserIcon className="w-5 h-5 text-white" />
+                )}
+              </button>
+
+              {showUserMenu && (
+                <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-20">
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="text-sm font-medium text-gray-900">
+                      {user.user_metadata?.full_name || user.email}
+                    </p>
+                    <p className="text-xs text-gray-500">{user.email}</p>
+                  </div>
+                  
+                  <Link
+                    href="/profile"
+                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    onClick={() => setShowUserMenu(false)}
+                  >
+                    My Profile
+                  </Link>
+                  <Link
+                    href="/my-listings"
+                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    onClick={() => setShowUserMenu(false)}
+                  >
+                    My Listings
+                  </Link>
+                  <Link
+                    href="/favorites"
+                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    onClick={() => setShowUserMenu(false)}
+                  >
+                    Saved Items
+                  </Link>
+                  <hr className="my-2 border-gray-200" />
+                  <Link
+                    href="/settings"
+                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    onClick={() => setShowUserMenu(false)}
+                  >
+                    Settings
+                  </Link>
+                  <button 
+                    onClick={handleSignOut}
+                    disabled={loading}
+                    className="flex items-center w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    {loading ? 'Signing out...' : 'Sign Out'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Button
+              onClick={handleSignIn}
+              disabled={loading}
+              className="bg-white/10 backdrop-blur-sm border border-white/30 text-white hover:bg-white hover:text-blue-600 transition-all duration-300 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 font-semibold"
+            >
+              <LogIn className="w-4 h-4 mr-2" />
+              {loading ? 'Signing in...' : 'Sign In'}
+            </Button>
+          )}
         </div>
       </div>
     </header>
