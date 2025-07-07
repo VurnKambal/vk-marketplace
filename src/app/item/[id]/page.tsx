@@ -23,6 +23,7 @@ export default function ItemDetailPage({ params }: ItemDetailPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [resolvedParams, setResolvedParams] = useState<{ id: string } | null>(null);
+  const [isFavorited, setIsFavorited] = useState(false);
 
   // Resolve async params
   useEffect(() => {
@@ -52,6 +53,18 @@ export default function ItemDetailPage({ params }: ItemDetailPageProps) {
 
     fetchListing();
   }, [resolvedParams]);
+
+  const handleFavoriteClick = () => {
+    setIsFavorited(prev => !prev);
+    // Add logic to save to favorites in the backend or local storage
+  };
+
+  const handleShareClick = () => {
+    if (listing) {
+      navigator.clipboard.writeText(`Check out this listing: ${window.location.href}`);
+      alert('Listing URL copied to clipboard!');
+    }
+  };
 
   if (loading) {
     return (
@@ -136,10 +149,22 @@ export default function ItemDetailPage({ params }: ItemDetailPageProps) {
 
               {/* Action buttons overlay */}
               <div className="absolute top-6 right-6 flex space-x-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                <button className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center hover:bg-white/30 transition-colors duration-200 hover:scale-110 transform">
-                  <Heart className="w-6 h-6 text-white" />
+                <button 
+                  onClick={handleFavoriteClick}
+                  className={`w-12 h-12 backdrop-blur-sm rounded-2xl flex items-center justify-center transition-all duration-200 hover:scale-110 ${
+                    isFavorited 
+                      ? 'bg-red-500/90 text-white' 
+                      : 'bg-white/20 text-white hover:bg-white/30'
+                  }`}
+                  title={isFavorited ? "Remove from favorites" : "Add to favorites"}
+                >
+                  <Heart className={`w-6 h-6 ${isFavorited ? 'fill-current' : ''}`} />
                 </button>
-                <button className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center hover:bg-white/30 transition-colors duration-200 hover:scale-110 transform">
+                <button 
+                  onClick={handleShareClick}
+                  className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center hover:bg-white/30 transition-colors duration-200 hover:scale-110 transform"
+                  title="Share this listing"
+                >
                   <Share2 className="w-6 h-6 text-white" />
                 </button>
               </div>
@@ -278,11 +303,25 @@ export default function ItemDetailPage({ params }: ItemDetailPageProps) {
             <div className="space-y-4">
               <MessageSeller listing={listing} />
               <div className="grid grid-cols-2 gap-4">
-                <Button variant="outline" size="lg" className="rounded-2xl font-semibold py-4 border-2 hover:bg-red-50 hover:border-red-300 hover:text-red-600 transition-all duration-300 hover:scale-105">
-                  <Heart className="w-5 h-5 mr-2" />
-                  Save Item
+                <Button 
+                  onClick={handleFavoriteClick}
+                  variant="outline" 
+                  size="lg" 
+                  className={`rounded-2xl font-semibold py-4 border-2 transition-all duration-300 hover:scale-105 ${
+                    isFavorited 
+                      ? 'bg-red-50 border-red-300 text-red-600' 
+                      : 'hover:bg-red-50 hover:border-red-300 hover:text-red-600'
+                  }`}
+                >
+                  <Heart className={`w-5 h-5 mr-2 ${isFavorited ? 'fill-current' : ''}`} />
+                  {isFavorited ? 'Saved' : 'Save Item'}
                 </Button>
-                <Button variant="outline" size="lg" className="rounded-2xl font-semibold py-4 border-2 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all duration-300 hover:scale-105">
+                <Button 
+                  onClick={handleShareClick}
+                  variant="outline" 
+                  size="lg" 
+                  className="rounded-2xl font-semibold py-4 border-2 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all duration-300 hover:scale-105"
+                >
                   <Share2 className="w-5 h-5 mr-2" />
                   Share
                 </Button>
