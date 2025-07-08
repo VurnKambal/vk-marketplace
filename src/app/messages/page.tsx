@@ -437,6 +437,18 @@ export default function MessagesPage() {
     try {
       console.log('🔔 REAL-TIME MESSAGE RECEIVED:', newMessage);
       
+      // IMPORTANT: Don't process real-time messages that the current user sent
+      // This prevents the sender from seeing their own message duplicated via real-time
+      const isMessageFromCurrentUser = (newMessage.buyer_id && newMessage.buyer_id === currentUser?.id) ||
+                                      (newMessage.seller_email === currentUser?.email && !newMessage.buyer_id);
+      
+      if (isMessageFromCurrentUser) {
+        console.log('🚫 IGNORING OWN MESSAGE - preventing duplicate for sender');
+        return;
+      }
+      
+      console.log('✅ Processing message from OTHER USER via real-time');
+      
       // Use ref to get current selected conversation (avoids stale state)
       const currentSelectedConversation = selectedConversationRef.current;
       console.log('🔍 CURRENT SELECTED CONVERSATION FROM REF:', currentSelectedConversation);
@@ -573,7 +585,7 @@ export default function MessagesPage() {
         });
       }
 
-      // Always update conversations list for sidebar
+      // Always update conversations list for sidebar (only for messages from others)
       setConversations(prevConversations => {
         console.log('📋 Updating conversations list...');
         
