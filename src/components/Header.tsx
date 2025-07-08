@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { searchUtils, favoritesUtils, searchCategories } from "@/lib/utils";
 import { supabase, signInWithGoogle, signOut } from "@/lib/supabase";
 import { getUnreadMessageCount, getUserMessages } from "@/lib/api";
@@ -17,6 +17,7 @@ interface HeaderProps {
 
 export function Header({ onSearch }: HeaderProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
@@ -111,6 +112,23 @@ export function Header({ onSearch }: HeaderProps) {
     };
   }, [user]);
 
+  // Sync search input with URL parameters
+  useEffect(() => {
+    const urlSearch = searchParams?.get('search') || '';
+    
+    // Only show actual search queries in the input, not category names
+    setSearchQuery(urlSearch);
+  }, [searchParams]);
+
+  // Get current category for placeholder text
+  const currentCategory = searchParams?.get('category');
+  const selectedCategoryInfo = searchCategories.find(cat => cat.id === currentCategory);
+  
+  // Dynamic placeholder based on selected category
+  const searchPlaceholder = selectedCategoryInfo 
+    ? `Search in ${selectedCategoryInfo.name}...`
+    : "Search for textbooks, furniture, electronics...";
+
   const updateFavoriteCount = async () => {
     try {
       const favorites = await favoritesUtils.getFavorites();
@@ -185,12 +203,35 @@ export function Header({ onSearch }: HeaderProps) {
   };
 
   const handleSearch = (query: string) => {
-    if (query.trim()) {
-      searchUtils.addRecentSearch(query.trim());
+    // Always trigger search, even for empty queries to allow clearing
+    const trimmedQuery = query.trim();
+    
+    if (trimmedQuery) {
+      searchUtils.addRecentSearch(trimmedQuery);
       setRecentSearches(searchUtils.getRecentSearches());
-      setShowSearchSuggestions(false);
-      onSearch?.(query.trim());
-      router.push(`/?search=${encodeURIComponent(query.trim())}`);
+    }
+    
+    setShowSearchSuggestions(false);
+    onSearch?.(trimmedQuery);
+    
+    // Get current category from URL to preserve it
+    const currentCategory = searchParams?.get('category');
+    
+    // Build URL with both search and category parameters
+    const params = new URLSearchParams();
+    if (trimmedQuery) {
+      params.set('search', trimmedQuery);
+    }
+    if (currentCategory) {
+      params.set('category', currentCategory);
+    }
+    
+    // Navigate with preserved category and search parameters
+    const queryString = params.toString();
+    if (queryString) {
+      router.push(`/?${queryString}`);
+    } else {
+      router.push('/'); // Clear all filters if no search or category
     }
   };
 
@@ -208,8 +249,8 @@ export function Header({ onSearch }: HeaderProps) {
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchQuery(value);
-    onSearch?.(value);
-    setShowSearchSuggestions(value.length > 0);
+    // Remove immediate search on keystroke - only search on submit or suggestion click
+    setShowSearchSuggestions(value.length > 0 || recentSearches.length > 0);
   };
 
   const handleSearchFocus = () => {
@@ -242,7 +283,7 @@ export function Header({ onSearch }: HeaderProps) {
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 group-focus-within:text-blue-500 transition-colors duration-200 z-10" />
             <Input
               type="text"
-              placeholder="Search for textbooks, furniture, electronics..."
+              placeholder={searchPlaceholder}
               value={searchQuery}
               onChange={handleSearchChange}
               onFocus={handleSearchFocus}
@@ -528,7 +569,7 @@ export function Header({ onSearch }: HeaderProps) {
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 z-10" />
             <Input
               type="text"
-              placeholder="Search marketplace..."
+              placeholder={searchPlaceholder}
               value={searchQuery}
               onChange={handleSearchChange}
               className="pl-12 pr-4 py-3 bg-white/90 backdrop-blur-sm border-white/20 rounded-2xl focus:bg-white focus:ring-2 focus:ring-white/50 focus:border-transparent placeholder:text-gray-500 text-gray-800 shadow-lg w-full"

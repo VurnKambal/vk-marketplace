@@ -6,13 +6,24 @@ import { ListingGrid } from "@/components/ListingGrid";
 import { getListings } from "@/lib/api";
 import { convertDatabaseListing, Listing } from "@/lib/types";
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 
 export default function Home() {
+  const searchParams = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Initialize state from URL parameters
+  useEffect(() => {
+    const urlSearch = searchParams.get('search') || '';
+    const urlCategory = searchParams.get('category') || '';
+    
+    setSearchQuery(urlSearch);
+    setSelectedCategory(urlCategory);
+  }, [searchParams]);
 
   // Fetch listings from Supabase
   useEffect(() => {
@@ -44,7 +55,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <Header onSearch={setSearchQuery} />
+      <Header onSearch={setSearchQuery} currentCategory={selectedCategory} />
       <div className="flex flex-col lg:flex-row relative">
         {/* Animated background elements */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">

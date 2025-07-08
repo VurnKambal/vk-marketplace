@@ -4,6 +4,7 @@ import { CATEGORIES } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface SidebarProps {
   selectedCategory?: string;
@@ -11,9 +12,18 @@ interface SidebarProps {
 }
 
 export function Sidebar({ selectedCategory, onCategorySelect }: SidebarProps) {
+  const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
 
   const handleCategoryClick = (categoryId: string) => {
+    // Update URL properly
+    if (categoryId) {
+      router.push(`/?category=${categoryId}`);
+    } else {
+      router.push('/');
+    }
+    
+    // Also call the callback for local state updates
     onCategorySelect?.(categoryId === selectedCategory ? '' : categoryId);
   };
 

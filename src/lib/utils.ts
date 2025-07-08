@@ -116,18 +116,27 @@ export const favoritesUtils = {
   }
 };
 
-// Enhanced search categories
+// Enhanced search categories - matching original CATEGORIES
 export const searchCategories = [
-  { id: 'electronics', name: 'Electronics', emoji: '📱' },
-  { id: 'textbooks', name: 'Textbooks', emoji: '📚' },
-  { id: 'furniture', name: 'Furniture', emoji: '🪑' },
-  { id: 'clothing', name: 'Clothing', emoji: '👕' },
-  { id: 'sports-equipment', name: 'Sports Equipment', emoji: '⚽' },
-  { id: 'home-garden', name: 'Home & Garden', emoji: '🏡' },
   { id: 'vehicles', name: 'Vehicles', emoji: '🚗' },
-  { id: 'music-instruments', name: 'Music & Instruments', emoji: '🎸' },
-  { id: 'art-collectibles', name: 'Art & Collectibles', emoji: '🎨' },
-  { id: 'kitchen-appliances', name: 'Kitchen & Appliances', emoji: '🍳' }
+  { id: 'property-rentals', name: 'Property Rentals', emoji: '🏠' },
+  { id: 'apparel', name: 'Apparel', emoji: '👕' },
+  { id: 'classifieds', name: 'Classifieds', emoji: '📋' },
+  { id: 'electronics', name: 'Electronics', emoji: '📱' },
+  { id: 'entertainment', name: 'Entertainment', emoji: '🎬' },
+  { id: 'family', name: 'Family', emoji: '👨‍👩‍👧‍👦' },
+  { id: 'free-stuff', name: 'Free Stuff', emoji: '🆓' },
+  { id: 'garden-outdoor', name: 'Garden & Outdoor', emoji: '🌿' },
+  { id: 'hobbies', name: 'Hobbies', emoji: '🎨' },
+  { id: 'home-goods', name: 'Home Goods', emoji: '🪑' },
+  { id: 'home-improvement', name: 'Home Improvement', emoji: '🔨' },
+  { id: 'home-sales', name: 'Home Sales', emoji: '🏡' },
+  { id: 'musical-instruments', name: 'Musical Instruments', emoji: '🎸' },
+  { id: 'office-supplies', name: 'Office Supplies', emoji: '📎' },
+  { id: 'pet-supplies', name: 'Pet Supplies', emoji: '🐕' },
+  { id: 'sporting-goods', name: 'Sporting Goods', emoji: '⚽' },
+  { id: 'toys-games', name: 'Toys & Games', emoji: '🎲' },
+  { id: 'buy-sell-groups', name: 'Buy and sell groups', emoji: '🛒' }
 ];
 
 // Notification utilities
