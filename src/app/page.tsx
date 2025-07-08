@@ -5,10 +5,11 @@ import { Sidebar } from "@/components/Sidebar";
 import { ListingGrid } from "@/components/ListingGrid";
 import { getListings } from "@/lib/api";
 import { convertDatabaseListing, Listing } from "@/lib/types";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function Home() {
+// Separate component for search functionality
+function SearchableHomePage() {
   const searchParams = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -104,5 +105,32 @@ export default function Home() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Loading fallback component
+function HomePageSkeleton() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 h-20 animate-pulse"></div>
+      <div className="flex flex-col lg:flex-row">
+        <div className="w-full lg:w-80 bg-white/50 h-screen animate-pulse"></div>
+        <div className="flex-1 p-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="bg-white/50 h-64 rounded-xl animate-pulse"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<HomePageSkeleton />}>
+      <SearchableHomePage />
+    </Suspense>
   );
 }

@@ -4,7 +4,7 @@ import { Search, Bell, Heart, UserIcon, Menu, ShoppingBag, LogIn, LogOut, Messag
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { searchUtils, favoritesUtils, searchCategories } from "@/lib/utils";
 import { supabase, signInWithGoogle, signOut } from "@/lib/supabase";
@@ -13,6 +13,7 @@ import type { User } from "@supabase/supabase-js";
 
 interface HeaderProps {
   onSearch?: (query: string) => void;
+  currentCategory?: string;
 }
 
 // Google Logo SVG Component following Google's brand guidelines
@@ -37,7 +38,8 @@ const GoogleIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export function Header({ onSearch }: HeaderProps) {
+// Separate component for search functionality that uses searchParams
+function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
@@ -143,8 +145,8 @@ export function Header({ onSearch }: HeaderProps) {
   }, [searchParams]);
 
   // Get current category for placeholder text
-  const currentCategory = searchParams?.get('category');
-  const selectedCategoryInfo = searchCategories.find(cat => cat.id === currentCategory);
+  const currentCategoryFromUrl = searchParams?.get('category') || currentCategory;
+  const selectedCategoryInfo = searchCategories.find(cat => cat.id === currentCategoryFromUrl);
   
   // Dynamic placeholder based on selected category
   const searchPlaceholder = selectedCategoryInfo 
@@ -323,7 +325,7 @@ export function Header({ onSearch }: HeaderProps) {
                 >
                   <div className="flex items-center space-x-3">
                     <Search className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-700">Search for "{searchQuery}"</span>
+                    <span className="text-sm text-gray-700">Search for &quot;{searchQuery}&quot;</span>
                   </div>
                 </button>
               )}
@@ -609,5 +611,35 @@ export function Header({ onSearch }: HeaderProps) {
         </div>
       )}
     </header>
+  );
+}
+
+// Loading fallback component for header
+function HeaderSkeleton() {
+  return (
+    <header className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 border-b border-purple-200 px-4 py-4 shadow-lg backdrop-blur-sm sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="flex items-center space-x-2 sm:space-x-3">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-2xl animate-pulse"></div>
+          <div className="hidden sm:block">
+            <div className="h-6 w-32 bg-white/20 rounded animate-pulse mb-1"></div>
+            <div className="h-3 w-24 bg-white/20 rounded animate-pulse"></div>
+          </div>
+        </div>
+        <div className="flex items-center space-x-2 sm:space-x-4">
+          <div className="w-8 h-8 bg-white/20 rounded-xl animate-pulse"></div>
+          <div className="w-20 h-8 bg-white/20 rounded-xl animate-pulse"></div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// Main Header component with Suspense wrapper
+export function Header({ onSearch, currentCategory }: HeaderProps) {
+  return (
+    <Suspense fallback={<HeaderSkeleton />}>
+      <HeaderWithSearchParams onSearch={onSearch} currentCategory={currentCategory} />
+    </Suspense>
   );
 }
