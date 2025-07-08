@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useState, useRef, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { searchUtils, favoritesUtils, searchCategories } from "@/lib/utils";
 import { supabase, signInWithGoogle, signOut } from "@/lib/supabase";
 import { getUnreadMessageCount, getUserMessages } from "@/lib/api";
@@ -42,7 +42,13 @@ const GoogleIcon = ({ className }: { className?: string }) => (
 function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  
+  // Check if we're on the main marketplace page
+  const isMarketplacePage = pathname === '/';
+  
   const [user, setUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true); // Add loading state for auth
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -60,8 +66,14 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
   useEffect(() => {
     // Get initial session
     const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setUser(session?.user ?? null);
+      } catch (error) {
+        console.error('Error getting session:', error);
+      } finally {
+        setIsAuthLoading(false); // Set loading to false after checking session
+      }
     };
     getSession();
 
@@ -69,6 +81,7 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setUser(session?.user ?? null);
+        setIsAuthLoading(false); // Also set loading to false on auth state change
         
         if (session?.user) {
           // Update favorite count and messages when user logs in
@@ -136,13 +149,13 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
     };
   }, [user]);
 
-  // Sync search input with URL parameters
+  // Sync search input with URL parameters - only on marketplace page
   useEffect(() => {
-    const urlSearch = searchParams?.get('search') || '';
-    
-    // Only show actual search queries in the input, not category names
-    setSearchQuery(urlSearch);
-  }, [searchParams]);
+    if (isMarketplacePage) {
+      const urlSearch = searchParams?.get('search') || '';
+      setSearchQuery(urlSearch);
+    }
+  }, [searchParams, isMarketplacePage]);
 
   // Get current category for placeholder text
   const currentCategoryFromUrl = searchParams?.get('category') || currentCategory;
@@ -260,9 +273,28 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
   };
 
   const handleCategorySearch = (categoryId: string) => {
-    setSearchQuery('');
+    // DON'T clear search query when changing categories
     setShowSearchSuggestions(false);
-    router.push(`/?category=${categoryId}`);
+    
+    // Get current search query to preserve it
+    const currentSearch = searchParams?.get('search');
+    
+    // Build URL with both search and category parameters
+    const params = new URLSearchParams();
+    if (currentSearch) {
+      params.set('search', currentSearch);
+    }
+    if (categoryId) {
+      params.set('category', categoryId);
+    }
+    
+    // Navigate with preserved search and new category
+    const queryString = params.toString();
+    if (queryString) {
+      router.push(`/?${queryString}`);
+    } else {
+      router.push('/');
+    }
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -301,86 +333,90 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
           </div>
         </Link>
 
-        {/* Search Bar - Hidden on mobile, shown on tablet+ */}
-        <div className="hidden md:flex flex-1 max-w-lg mx-8 relative" ref={searchRef}>
-          <form onSubmit={handleSearchSubmit} className="relative group w-full">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 group-focus-within:text-blue-500 transition-colors duration-200 z-10" />
-            <Input
-              type="text"
-              placeholder={searchPlaceholder}
-              value={searchQuery}
-              onChange={handleSearchChange}
-              onFocus={handleSearchFocus}
-              className="pl-12 pr-4 py-3 bg-white/90 backdrop-blur-sm border-white/20 rounded-2xl focus:bg-white focus:ring-2 focus:ring-white/50 focus:border-transparent placeholder:text-gray-500 text-gray-800 shadow-lg transition-all duration-300 hover:shadow-xl focus:scale-[1.02] w-full"
-            />
-          </form>
+        {/* Search Bar - Only show on marketplace page */}
+        {isMarketplacePage && (
+          <div className="hidden md:flex flex-1 max-w-lg mx-8 relative" ref={searchRef}>
+            <form onSubmit={handleSearchSubmit} className="relative group w-full">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 group-focus-within:text-blue-500 transition-colors duration-200 z-10" />
+              <Input
+                type="text"
+                placeholder={searchPlaceholder}
+                value={searchQuery}
+                onChange={handleSearchChange}
+                onFocus={handleSearchFocus}
+                className="pl-12 pr-4 py-3 bg-white/90 backdrop-blur-sm border-white/20 rounded-2xl focus:bg-white focus:ring-2 focus:ring-white/50 focus:border-transparent placeholder:text-gray-500 text-gray-800 shadow-lg transition-all duration-300 hover:shadow-xl focus:scale-[1.02] w-full"
+              />
+            </form>
 
-          {/* Enhanced Search Suggestions Dropdown */}
-          {showSearchSuggestions && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-20 max-h-80 overflow-y-auto">
-              {searchQuery.length > 0 && (
-                <button
-                  onClick={() => handleSearch(searchQuery)}
-                  className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
-                >
-                  <div className="flex items-center space-x-3">
-                    <Search className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-700">Search for &quot;{searchQuery}&quot;</span>
-                  </div>
-                </button>
-              )}
-              
-              {searchQuery.length === 0 && recentSearches.length > 0 && (
-                <>
-                  <div className="px-4 py-2 text-sm font-semibold text-gray-700 border-b border-gray-100">
-                    Recent Searches
-                  </div>
-                  {recentSearches.map((search, index) => (
+            {/* Enhanced Search Suggestions Dropdown */}
+            {showSearchSuggestions && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-20 max-h-80 overflow-y-auto">
+                {searchQuery.length > 0 && (
+                  <button
+                    onClick={() => handleSearch(searchQuery)}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <Search className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm text-gray-700">Search for &quot;{searchQuery}&quot;</span>
+                    </div>
+                  </button>
+                )}
+                
+                {searchQuery.length === 0 && recentSearches.length > 0 && (
+                  <>
+                    <div className="px-4 py-2 text-sm font-semibold text-gray-700 border-b border-gray-100">
+                      Recent Searches
+                    </div>
+                    {recentSearches.map((search, index) => (
+                      <button
+                        key={index}
+                        onClick={() => {
+                          setSearchQuery(search);
+                          handleSearch(search);
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors text-gray-700 text-sm"
+                      >
+                        {search}
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {/* Enhanced Categories */}
+                <div className="px-4 py-2 text-sm font-semibold text-gray-700 border-b border-gray-100">
+                  Browse Categories
+                </div>
+                <div className="grid grid-cols-2 gap-1 p-2">
+                  {searchCategories.map((category) => (
                     <button
-                      key={index}
-                      onClick={() => {
-                        setSearchQuery(search);
-                        handleSearch(search);
-                      }}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors text-gray-700 text-sm"
+                      key={category.id}
+                      onClick={() => handleCategorySearch(category.id)}
+                      className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors text-left"
                     >
-                      {search}
+                      <span className="text-lg">{category.emoji}</span>
+                      <span>{category.name}</span>
                     </button>
                   ))}
-                </>
-              )}
-
-              {/* Enhanced Categories */}
-              <div className="px-4 py-2 text-sm font-semibold text-gray-700 border-b border-gray-100">
-                Browse Categories
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-1 p-2">
-                {searchCategories.map((category) => (
-                  <button
-                    key={category.id}
-                    onClick={() => handleCategorySearch(category.id)}
-                    className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors text-left"
-                  >
-                    <span className="text-lg">{category.emoji}</span>
-                    <span>{category.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex items-center space-x-2 sm:space-x-4">
-          {/* Mobile Search Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="md:hidden bg-white/10 backdrop-blur-sm border-white/30 text-white hover:bg-white hover:text-blue-600 transition-all duration-300 rounded-xl"
-            onClick={() => setShowSearchSuggestions(true)}
-          >
-            <Search className="w-4 h-4" />
-          </Button>
+          {/* Mobile Search Button - Only show on marketplace page */}
+          {isMarketplacePage && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="md:hidden bg-white/10 backdrop-blur-sm border-white/30 text-white hover:bg-white hover:text-blue-600 transition-all duration-300 rounded-xl"
+              onClick={() => setShowSearchSuggestions(true)}
+            >
+              <Search className="w-4 h-4" />
+            </Button>
+          )}
 
           <Button
             variant="outline"
@@ -492,111 +528,120 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
             </>
           )}
 
-          {/* User Menu / Sign In */}
-          {user ? (
-            <div className="relative" ref={userMenuRef}>
-              <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                className="w-8 h-8 lg:w-10 lg:h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 flex items-center justify-center"
-              >
-                {user.user_metadata?.avatar_url ? (
-                  <img 
-                    src={user.user_metadata.avatar_url} 
-                    alt="Profile" 
-                    className="w-full h-full rounded-full object-cover"
-                  />
-                ) : (
-                  <UserIcon className="w-4 h-4 lg:w-5 lg:h-5 text-white" />
-                )}
-              </button>
-
-              {showUserMenu && (
-                <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-20">
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-sm font-medium text-gray-900">
-                      {user.user_metadata?.full_name || user.email}
-                    </p>
-                    <p className="text-xs text-gray-500">{user.email}</p>
-                  </div>
-                  
-                  <Link
-                    href="/profile"
-                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    onClick={() => setShowUserMenu(false)}
+          {/* User Menu / Sign In - Only show if not loading */}
+          {!isAuthLoading && (
+            <>
+              {user ? (
+                <div className="relative" ref={userMenuRef}>
+                  <button
+                    onClick={() => setShowUserMenu(!showUserMenu)}
+                    className="w-8 h-8 lg:w-10 lg:h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 flex items-center justify-center"
                   >
-                    My Profile
-                  </Link>
-                  <Link
-                    href="/my-listings"
-                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    onClick={() => setShowUserMenu(false)}
-                  >
-                    My Listings
-                  </Link>
-                  <Link
-                    href="/messages"
-                    className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    onClick={() => setShowUserMenu(false)}
-                  >
-                    <MessageCircle className="w-4 h-4 mr-2" />
-                    Messages
-                    {unreadCount > 0 && (
-                      <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {unreadCount}
-                      </span>
+                    {user.user_metadata?.avatar_url ? (
+                      <img 
+                        src={user.user_metadata.avatar_url} 
+                        alt="Profile" 
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    ) : (
+                      <UserIcon className="w-4 h-4 lg:w-5 lg:h-5 text-white" />
                     )}
-                  </Link>
-                  <Link
-                    href="/favorites"
-                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    onClick={() => setShowUserMenu(false)}
-                  >
-                    Saved Items
-                  </Link>
-                  <hr className="my-2 border-gray-200" />
-                  <Link
-                    href="/settings"
-                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    onClick={() => setShowUserMenu(false)}
-                  >
-                    Settings
-                  </Link>
-                  <button 
-                    onClick={handleSignOut}
-                    disabled={loading}
-                    className="flex items-center w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    {loading ? 'Signing out...' : 'Sign Out'}
                   </button>
+
+                  {showUserMenu && (
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-20">
+                      <div className="px-4 py-3 border-b border-gray-100">
+                        <p className="text-sm font-medium text-gray-900">
+                          {user.user_metadata?.full_name || user.email}
+                        </p>
+                        <p className="text-xs text-gray-500">{user.email}</p>
+                      </div>
+                      
+                      <Link
+                        href="/profile"
+                        className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        My Profile
+                      </Link>
+                      <Link
+                        href="/my-listings"
+                        className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        My Listings
+                      </Link>
+                      <Link
+                        href="/messages"
+                        className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        <MessageCircle className="w-4 h-4 mr-2" />
+                        Messages
+                        {unreadCount > 0 && (
+                          <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                            {unreadCount}
+                          </span>
+                        )}
+                      </Link>
+                      <Link
+                        href="/favorites"
+                        className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        Saved Items
+                      </Link>
+                      <hr className="my-2 border-gray-200" />
+                      <Link
+                        href="/settings"
+                        className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        Settings
+                      </Link>
+                      <button 
+                        onClick={handleSignOut}
+                        disabled={loading}
+                        className="flex items-center w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                      >
+                        <LogOut className="w-4 h-4 mr-2" />
+                        {loading ? 'Signing out...' : 'Sign Out'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ) : (
-            <Button
-              onClick={handleSignIn}
-              disabled={loading}
-              className="bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg px-4 py-3 font-medium text-sm transition-all duration-200 hover:shadow-md shadow-sm flex items-center space-x-3 disabled:opacity-50 disabled:cursor-not-allowed btn-ripple hover:scale-105"
-            >
-              {loading ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
-                  <span className="hidden sm:inline">Signing in...</span>
-                </>
               ) : (
-                <>
-                  <GoogleIcon className="shrink-0" />
-                  <span className="hidden sm:inline">Sign in with Google</span>
-                  <span className="sm:hidden">Google</span>
-                </>
+                <Button
+                  onClick={handleSignIn}
+                  disabled={loading}
+                  className="bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg px-4 py-3 font-medium text-sm transition-all duration-200 hover:shadow-md shadow-sm flex items-center space-x-3 disabled:opacity-50 disabled:cursor-not-allowed btn-ripple hover:scale-105"
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
+                      <span className="hidden sm:inline">Signing in...</span>
+                    </>
+                  ) : (
+                    <>
+                      <GoogleIcon className="shrink-0" />
+                      <span className="hidden sm:inline">Sign in with Google</span>
+                      <span className="sm:hidden">Google</span>
+                    </>
+                  )}
+                </Button>
               )}
-            </Button>
+            </>
+          )}
+
+          {/* Loading state for authentication */}
+          {isAuthLoading && (
+            <div className="w-8 h-8 lg:w-10 lg:h-10 bg-white/20 rounded-full animate-pulse"></div>
           )}
         </div>
       </div>
 
-      {/* Mobile Search Bar - Shows when search button is pressed */}
-      {showSearchSuggestions && (
+      {/* Mobile Search Bar - Only show on marketplace page */}
+      {isMarketplacePage && showSearchSuggestions && (
         <div className="md:hidden mt-4 px-4 pb-4">
           <div className="relative">
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 z-10" />

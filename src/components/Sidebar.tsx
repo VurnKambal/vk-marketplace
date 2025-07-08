@@ -16,9 +16,23 @@ export function Sidebar({ selectedCategory, onCategorySelect }: SidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const handleCategoryClick = (categoryId: string) => {
-    // Update URL properly
+    // Get current search query to preserve it when changing categories
+    const searchParams = new URLSearchParams(window.location.search);
+    const currentSearch = searchParams.get('search');
+    
+    // Build URL properly with both search and category parameters
+    const params = new URLSearchParams();
+    if (currentSearch) {
+      params.set('search', currentSearch);
+    }
     if (categoryId) {
-      router.push(`/?category=${categoryId}`);
+      params.set('category', categoryId);
+    }
+    
+    // Update URL with preserved search and new category
+    const queryString = params.toString();
+    if (queryString) {
+      router.push(`/?${queryString}`);
     } else {
       router.push('/');
     }

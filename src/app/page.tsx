@@ -26,16 +26,24 @@ function SearchableHomePage() {
     setSelectedCategory(urlCategory);
   }, [searchParams]);
 
-  // Fetch listings from Supabase
+  // Fetch listings from Supabase - Use URL params directly for immediate effect
   useEffect(() => {
     const fetchListings = async () => {
       try {
         setLoading(true);
         setError(null);
+        
+        // Get parameters directly from URL to avoid state timing issues
+        const urlCategory = searchParams.get('category') || '';
+        const urlSearch = searchParams.get('search') || '';
+        
+        console.log('Fetching with filters:', { category: urlCategory, search: urlSearch });
+        
         const data = await getListings({
-          category: selectedCategory || undefined,
-          search: searchQuery || undefined
+          category: urlCategory || undefined,
+          search: urlSearch || undefined
         });
+        
         const convertedListings = data.map(convertDatabaseListing);
         setListings(convertedListings);
       } catch (err) {
@@ -47,11 +55,12 @@ function SearchableHomePage() {
     };
 
     fetchListings();
-  }, [selectedCategory, searchQuery]);
+  }, [searchParams]); // Depend directly on searchParams, not local state
 
-  // Get category name for title
-  const categoryName = selectedCategory 
-    ? selectedCategory.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())
+  // Get category name for title - use URL params directly
+  const urlCategory = searchParams.get('category') || '';
+  const categoryName = urlCategory 
+    ? urlCategory.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())
     : "Today's picks";
 
   return (
