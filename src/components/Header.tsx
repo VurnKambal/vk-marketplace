@@ -44,8 +44,8 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   
-  // Check if we're on the main marketplace page
-  const isMarketplacePage = pathname === '/';
+  // Check if we're on a page where search is relevant for finding items
+  const shouldShowSearch = pathname === '/' || pathname === '/favorites' || pathname.startsWith('/item/');
   
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true); // Add loading state for auth
@@ -151,11 +151,11 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
 
   // Sync search input with URL parameters - only on marketplace page
   useEffect(() => {
-    if (isMarketplacePage) {
+    if (shouldShowSearch) {
       const urlSearch = searchParams?.get('search') || '';
       setSearchQuery(urlSearch);
     }
-  }, [searchParams, isMarketplacePage]);
+  }, [searchParams, shouldShowSearch]);
 
   // Get current category for placeholder text
   const currentCategoryFromUrl = searchParams?.get('category') || currentCategory;
@@ -334,7 +334,7 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
         </Link>
 
         {/* Search Bar - Only show on marketplace page */}
-        {isMarketplacePage && (
+        {shouldShowSearch && (
           <div className="hidden md:flex flex-1 max-w-lg mx-8 relative" ref={searchRef}>
             <form onSubmit={handleSearchSubmit} className="relative group w-full">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 group-focus-within:text-blue-500 transition-colors duration-200 z-10" />
@@ -407,7 +407,7 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
         {/* Action Buttons */}
         <div className="flex items-center space-x-2 sm:space-x-4">
           {/* Mobile Search Button - Only show on marketplace page */}
-          {isMarketplacePage && (
+          {shouldShowSearch && (
             <Button
               variant="outline"
               size="sm"
@@ -641,7 +641,7 @@ function HeaderWithSearchParams({ onSearch, currentCategory }: HeaderProps) {
       </div>
 
       {/* Mobile Search Bar - Only show on marketplace page */}
-      {isMarketplacePage && showSearchSuggestions && (
+      {shouldShowSearch && showSearchSuggestions && (
         <div className="md:hidden mt-4 px-4 pb-4">
           <div className="relative">
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 z-10" />
