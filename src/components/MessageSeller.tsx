@@ -94,9 +94,21 @@ export function MessageSeller({ listing }: MessageSellerProps) {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 rounded-xl font-semibold py-3">
-          <MessageCircle className="w-5 h-5 mr-2" />
-          Message Seller
+        <Button 
+          className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 rounded-xl font-semibold py-3 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 btn-ripple btn-pulse"
+          disabled={!user}
+        >
+          {!user ? (
+            <>
+              <Lock className="w-5 h-5 mr-2" />
+              Sign in to Message Seller
+            </>
+          ) : (
+            <>
+              <MessageCircle className="w-5 h-5 mr-2" />
+              Message Seller
+            </>
+          )}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md bg-white/95 backdrop-blur-sm border-0 shadow-2xl">

@@ -84,16 +84,9 @@ export default function ItemDetailPage({ params }: ItemDetailPageProps) {
 
   const handleShareClick = () => {
     if (listing) {
-      if (navigator.share) {
-        navigator.share({
-          title: listing.title,
-          text: `Check out this ${listing.title} for $${listing.price}`,
-          url: window.location.href
-        });
-      } else {
-        navigator.clipboard.writeText(window.location.href);
-        alert('Listing URL copied to clipboard!');
-      }
+      // Always copy to clipboard instead of using native share API
+      navigator.clipboard.writeText(window.location.href);
+      alert('Listing URL copied to clipboard!');
     }
   };
 

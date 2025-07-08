@@ -69,18 +69,9 @@ export function ListingCard({ listing }: ListingCardProps) {
     e.preventDefault();
     e.stopPropagation();
     
-    if (navigator.share) {
-      navigator.share({
-        title: listing.title,
-        text: `Check out this ${listing.title} for $${listing.price}`,
-        url: `${window.location.origin}/item/${listing.id}`
-      });
-    } else {
-      // Fallback: copy to clipboard
-      navigator.clipboard.writeText(`${window.location.origin}/item/${listing.id}`);
-      // You could show a toast notification here
-      alert('Link copied to clipboard!');
-    }
+    // Always copy to clipboard instead of using native share API
+    navigator.clipboard.writeText(`${window.location.origin}/item/${listing.id}`);
+    alert('Link copied to clipboard!');
   };
 
   return (
@@ -119,46 +110,46 @@ export function ListingCard({ listing }: ListingCardProps) {
                 <button
                   onClick={handleFavoriteClick}
                   disabled={loading}
-                  className={`w-6 h-6 sm:w-8 sm:h-8 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 disabled:opacity-50 ${
+                  className={`w-6 h-6 sm:w-8 sm:h-8 backdrop-blur-sm rounded-full flex items-center justify-center transition-all duration-200 hover:scale-125 active:scale-110 disabled:opacity-50 shadow-lg border border-white/20 btn-ripple ${
                     isFavorited 
-                      ? 'bg-red-500/90 text-white' 
-                      : 'bg-white/20 text-white hover:bg-white/30'
+                      ? 'bg-red-500/90 text-white shadow-red-500/50 animate-pulse' 
+                      : 'bg-black/60 text-white hover:bg-black/70 shadow-black/50'
                   }`}
                   title={isFavorited ? "Remove from favorites" : "Add to favorites"}
                 >
-                  <Heart className={`w-3 h-3 sm:w-4 sm:h-4 ${isFavorited ? 'fill-current' : ''}`} />
+                  <Heart className={`w-3 h-3 sm:w-4 sm:h-4 ${isFavorited ? 'fill-current' : ''} drop-shadow-lg transition-transform duration-200 ${isFavorited ? 'animate-pulse' : ''}`} />
                 </button>
                 <button
                   onClick={handleViewClick}
-                  className="w-6 h-6 sm:w-8 sm:h-8 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-all duration-200 hover:scale-110"
+                  className="w-6 h-6 sm:w-8 sm:h-8 bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-black/70 transition-all duration-200 hover:scale-125 active:scale-110 shadow-lg shadow-black/50 border border-white/20 btn-ripple"
                   title="Quick preview"
                   aria-label="Quick preview"
                 >
-                  <Eye className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+                  <Eye className="w-3 h-3 sm:w-4 sm:h-4 text-white drop-shadow-lg" />
                 </button>
                 <button
                   onClick={handleShareClick}
-                  className="w-6 h-6 sm:w-8 sm:h-8 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-all duration-200 hover:scale-110"
+                  className="w-6 h-6 sm:w-8 sm:h-8 bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-black/70 transition-all duration-200 hover:scale-125 active:scale-110 shadow-lg shadow-black/50 border border-white/20 btn-ripple"
                   title="Share this listing"
                   aria-label="Share this listing"
                 >
-                  <Share2 className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+                  <Share2 className="w-3 h-3 sm:w-4 sm:h-4 text-white drop-shadow-lg" />
                 </button>
               </div>
             </div>
 
             {/* Price badge overlay */}
             <div className="absolute top-2 sm:top-4 left-2 sm:left-4">
-              <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-2 py-1 sm:px-3 sm:py-1 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm shadow-lg transform rotate-3 group-hover:rotate-0 transition-transform duration-300">
+              <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-2 py-1 sm:px-3 sm:py-1 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm shadow-lg shadow-green-500/30 border border-white/20 transform rotate-3 group-hover:rotate-0 transition-transform duration-300">
                 ${listing.price.toLocaleString()}
               </div>
             </div>
 
             {/* View count badge */}
             <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              <div className="bg-black/50 backdrop-blur-sm text-white px-2 py-1 rounded-lg text-xs font-medium flex items-center space-x-1">
-                <Eye className="w-3 h-3" />
-                <span>{viewCount}</span>
+              <div className="bg-black/60 backdrop-blur-sm text-white px-2 py-1 rounded-lg text-xs font-medium flex items-center space-x-1 shadow-lg shadow-black/50 border border-white/20">
+                <Eye className="w-3 h-3 drop-shadow-lg" />
+                <span className="drop-shadow-lg">{viewCount}</span>
               </div>
             </div>
           </div>
