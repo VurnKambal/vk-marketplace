@@ -3,11 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Send, MessageSquare, ArrowLeft, User } from 'lucide-react';
 import { getUserMessages, getConversationMessages, sendMessage, markMessagesAsRead } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
+import { Header } from '@/components/Header';
 
 interface Message {
   id: string;
@@ -49,6 +49,8 @@ export default function MessagesPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageSubscriptionRef = useRef<any>(null);
+  // Add ref to track current selected conversation for real-time updates
+  const selectedConversationRef = useRef<Conversation | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -83,6 +85,11 @@ export default function MessagesPage() {
       }
     };
   }, [currentUser]);
+
+  // Update ref whenever selectedConversation changes
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
 
   const initializeUser = async () => {
     try {
@@ -225,17 +232,49 @@ export default function MessagesPage() {
     if (!newMessage.trim() || !selectedConversation || sending || !currentUser) return;
 
     const messageToSend = newMessage.trim();
+    const tempMessageId = `temp-${Date.now()}`;
     setSending(true);
     setNewMessage(''); // Clear input immediately for better UX
     
+    // Add optimistic message immediately for instant UI feedback
+    const optimisticMessage = {
+      id: tempMessageId,
+      listing_id: selectedConversation.listingId,
+      buyer_email: currentUser.email,
+      seller_email: selectedConversation.otherPartyEmail,
+      buyer_id: currentUser.id,
+      message: messageToSend,
+      read: false,
+      created_at: new Date().toISOString(),
+      listing: {
+        id: selectedConversation.listingId,
+        title: selectedConversation.listingTitle,
+        price: selectedConversation.listingPrice,
+        image_urls: [selectedConversation.listingImage],
+        seller_email: selectedConversation.otherPartyEmail
+      }
+    };
+
+    // Immediately add optimistic message to chat
+    setSelectedConversation(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        messages: [...prev.messages, optimisticMessage],
+        lastMessage: messageToSend,
+        lastMessageTime: optimisticMessage.created_at
+      };
+    });
+
     try {
+      // Send the actual message
       await sendMessage(
         selectedConversation.listingId,
         selectedConversation.otherPartyEmail,
         messageToSend
       );
       
-      // Force immediate refresh of conversation messages to ensure real-time update
+      // Replace optimistic message with real message from database
       setTimeout(async () => {
         const freshMessages = await getConversationMessages(
           selectedConversation.listingId,
@@ -260,13 +299,21 @@ export default function MessagesPage() {
               : conv
           )
         );
-      }, 100); // Small delay to ensure database write completes
+      }, 200); // Small delay to ensure database write completes
       
       // Trigger global message update
       window.dispatchEvent(new CustomEvent('messagesChanged'));
       
     } catch (error) {
       console.error('Error sending message:', error);
+      // Remove optimistic message on error and restore input
+      setSelectedConversation(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          messages: prev.messages.filter(msg => msg.id !== tempMessageId)
+        };
+      });
       setNewMessage(messageToSend); // Restore message on error
     } finally {
       setSending(false);
@@ -284,7 +331,8 @@ export default function MessagesPage() {
         minute: '2-digit',
         hour12: true 
       });
-    } else if (diffInHours < 168) { // 7 days
+    } else if (diffInHours < 168) // 7 days
+    {
       return date.toLocaleDateString('en-US', { weekday: 'short' });
     } else {
       return date.toLocaleDateString('en-US', { 
@@ -322,17 +370,21 @@ export default function MessagesPage() {
 
     // Set up new subscription for real-time message updates
     messageSubscriptionRef.current = supabase
-      .channel('messages-realtime')
+      .channel(`messages-${currentUser.id}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'messages'
       }, (payload) => {
-        console.log('New message received:', payload);
-        // Check if this message is relevant to current user
+        console.log('New message received via real-time:', payload);
         const newMessage = payload.new as any;
+        
+        // Check if this message is relevant to current user
         if (newMessage.buyer_email === currentUser.email || newMessage.seller_email === currentUser.email) {
+          console.log('Message is relevant to current user, processing...');
           handleRealtimeMessage(newMessage);
+        } else {
+          console.log('Message not relevant to current user, ignoring');
         }
       })
       .on('postgres_changes', {
@@ -340,8 +392,9 @@ export default function MessagesPage() {
         schema: 'public',
         table: 'messages'
       }, (payload) => {
-        console.log('Message updated:', payload);
+        console.log('Message updated via real-time:', payload);
         const updatedMessage = payload.new as any;
+        
         // Check if this message is relevant to current user
         if (updatedMessage.buyer_email === currentUser.email || updatedMessage.seller_email === currentUser.email) {
           // Handle read status updates
@@ -352,6 +405,9 @@ export default function MessagesPage() {
       })
       .subscribe((status) => {
         console.log('Real-time subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to real-time messages');
+        }
       });
   };
 
@@ -379,6 +435,12 @@ export default function MessagesPage() {
 
   const handleRealtimeMessage = async (newMessage: any) => {
     try {
+      console.log('🔔 REAL-TIME MESSAGE RECEIVED:', newMessage);
+      
+      // Use ref to get current selected conversation (avoids stale state)
+      const currentSelectedConversation = selectedConversationRef.current;
+      console.log('🔍 CURRENT SELECTED CONVERSATION FROM REF:', currentSelectedConversation);
+      
       // Get the listing details for the new message
       const { data: listing } = await supabase
         .from('listings')
@@ -386,7 +448,10 @@ export default function MessagesPage() {
         .eq('id', newMessage.listing_id)
         .single();
 
-      if (!listing) return;
+      if (!listing) {
+        console.log('❌ No listing found');
+        return;
+      }
 
       const messageWithListing = {
         ...newMessage,
@@ -398,77 +463,147 @@ export default function MessagesPage() {
         }
       };
 
-      // Update selected conversation FIRST for immediate chat update
-      if (selectedConversation && 
-          selectedConversation.listingId === newMessage.listing_id) {
-        
-        const isUserBuyer = newMessage.buyer_email === currentUser.email;
-        const isUserSeller = newMessage.seller_email === currentUser.email;
-        const otherPartyEmail = isUserBuyer ? newMessage.seller_email : newMessage.buyer_email;
-        
-        if (selectedConversation.otherPartyEmail === otherPartyEmail) {
-          // Immediately update the chat with the new message
-          setSelectedConversation(prev => ({
-            ...prev!,
-            messages: [...prev!.messages, messageWithListing],
-            lastMessage: newMessage.message,
-            lastMessageTime: newMessage.created_at
-          }));
-
-          // Auto-mark as read if conversation is open and message is from other party
-          const isFromOtherParty = (isUserBuyer && newMessage.seller_email === otherPartyEmail) ||
-                                  (isUserSeller && newMessage.buyer_email === otherPartyEmail);
-          
-          if (!newMessage.read && isFromOtherParty) {
-            setTimeout(() => {
-              markMessagesAsRead([newMessage.id]);
-            }, 1000);
-          }
-        }
+      // Determine user roles and other party with more robust logic
+      const isUserBuyer = newMessage.buyer_email === currentUser?.email;
+      const isUserSeller = newMessage.seller_email === currentUser?.email;
+      
+      // Calculate otherPartyEmail based on user role
+      let otherPartyEmail = '';
+      if (isUserBuyer) {
+        otherPartyEmail = newMessage.seller_email;
+      } else if (isUserSeller) {
+        otherPartyEmail = newMessage.buyer_email;
+      } else {
+        console.log('❌ User is neither buyer nor seller');
+        return;
       }
 
-      // Then update conversations list
+      console.log('🔍 USER ROLES:', {
+        currentUserEmail: currentUser?.email,
+        messageBuyer: newMessage.buyer_email,
+        messageSeller: newMessage.seller_email,
+        isUserBuyer,
+        isUserSeller,
+        calculatedOtherPartyEmail: otherPartyEmail
+      });
+
+      // Enhanced conversation matching logic using ref
+      const conversationMatches = currentSelectedConversation && 
+        currentSelectedConversation.listingId === newMessage.listing_id &&
+        currentSelectedConversation.otherPartyEmail === otherPartyEmail;
+
+      console.log('🎯 CONVERSATION MATCHING:', {
+        hasSelectedConversation: !!currentSelectedConversation,
+        selectedConversation: currentSelectedConversation ? {
+          listingId: currentSelectedConversation.listingId,
+          otherPartyEmail: currentSelectedConversation.otherPartyEmail,
+          listingTitle: currentSelectedConversation.listingTitle
+        } : null,
+        messageDetails: {
+          listing_id: newMessage.listing_id,
+          calculatedOtherPartyEmail: otherPartyEmail,
+          listingTitle: listing.title
+        },
+        listingIdMatches: currentSelectedConversation?.listingId === newMessage.listing_id,
+        otherPartyMatches: currentSelectedConversation?.otherPartyEmail === otherPartyEmail,
+        FINAL_MATCH: conversationMatches
+      });
+
+      // FORCE UPDATE CHATBOX IF CONVERSATION MATCHES
+      if (conversationMatches) {
+        console.log('🚀 FORCE UPDATING CHATBOX NOW!');
+        
+        // Use React's state updater with current state
+        setSelectedConversation(currentConv => {
+          if (!currentConv) {
+            console.log('❌ No current conversation in state updater');
+            return currentConv;
+          }
+
+          // Check for duplicates
+          const isDuplicate = currentConv.messages.some(msg => msg.id === newMessage.id);
+          if (isDuplicate) {
+            console.log('⚠️ Duplicate message, skipping');
+            return currentConv;
+          }
+
+          console.log('✅ ADDING MESSAGE TO CHATBOX - REAL-TIME UPDATE!');
+          const updatedConv = {
+            ...currentConv,
+            messages: [...currentConv.messages, messageWithListing],
+            lastMessage: newMessage.message,
+            lastMessageTime: newMessage.created_at
+          };
+
+          console.log('📊 CHATBOX STATE UPDATED:', {
+            previousMessageCount: currentConv.messages.length,
+            newMessageCount: updatedConv.messages.length,
+            newMessageId: newMessage.id,
+            newMessageText: newMessage.message,
+            newMessageFrom: isUserBuyer ? 'seller' : 'buyer'
+          });
+
+          // Force scroll after DOM update
+          setTimeout(() => {
+            console.log('🔄 Scrolling to bottom...');
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, 100);
+
+          return updatedConv;
+        });
+
+        // Mark as read if message is from other party
+        const messageFromOtherParty = (isUserBuyer && newMessage.seller_email === otherPartyEmail) || 
+                                     (isUserSeller && newMessage.buyer_email === otherPartyEmail);
+        
+        if (!newMessage.read && messageFromOtherParty) {
+          console.log('📖 Marking message as read...');
+          setTimeout(() => markMessagesAsRead([newMessage.id]), 500);
+        }
+      } else {
+        console.log('❌ NO CONVERSATION MATCH - CHATBOX NOT UPDATED');
+        console.log('🔍 DEBUGGING MATCH FAILURE:', {
+          selectedConversationExists: !!currentSelectedConversation,
+          selectedListingId: currentSelectedConversation?.listingId,
+          messageListingId: newMessage.listing_id,
+          selectedOtherParty: currentSelectedConversation?.otherPartyEmail,
+          calculatedOtherParty: otherPartyEmail,
+          listingMatch: currentSelectedConversation?.listingId === newMessage.listing_id,
+          partyMatch: currentSelectedConversation?.otherPartyEmail === otherPartyEmail
+        });
+      }
+
+      // Always update conversations list for sidebar
       setConversations(prevConversations => {
-        const isUserBuyer = newMessage.buyer_email === currentUser.email;
-        const isUserSeller = newMessage.seller_email === currentUser.email;
+        console.log('📋 Updating conversations list...');
         
-        if (!isUserBuyer && !isUserSeller) return prevConversations;
-        
-        const otherPartyEmail = isUserBuyer ? newMessage.seller_email : newMessage.buyer_email;
-        
-        const existingConvIndex = prevConversations.findIndex(
+        const existingIndex = prevConversations.findIndex(
           conv => conv.listingId === newMessage.listing_id && conv.otherPartyEmail === otherPartyEmail
         );
 
-        if (existingConvIndex >= 0) {
-          // Update existing conversation
-          const updatedConversations = [...prevConversations];
-          const existingConv = updatedConversations[existingConvIndex];
+        if (existingIndex >= 0) {
+          console.log('🔄 Updating existing conversation in list');
+          const updated = [...prevConversations];
+          const existing = updated[existingIndex];
           
-          // Check if message is from the other party (increment unread count only if conversation is not open)
-          const isFromOtherParty = (isUserBuyer && newMessage.seller_email === otherPartyEmail) ||
-                                  (isUserSeller && newMessage.buyer_email === otherPartyEmail);
+          // Check if message already exists
+          const messageExists = existing.messages.some(m => m.id === newMessage.id);
           
-          const isConversationOpen = selectedConversation?.listingId === newMessage.listing_id && 
-                                   selectedConversation?.otherPartyEmail === otherPartyEmail;
-          
-          updatedConversations[existingConvIndex] = {
-            ...existingConv,
+          updated[existingIndex] = {
+            ...existing,
             lastMessage: newMessage.message,
             lastMessageTime: newMessage.created_at,
-            unreadCount: existingConv.unreadCount + (isFromOtherParty && !isConversationOpen ? 1 : 0),
-            messages: [...existingConv.messages, messageWithListing]
+            messages: messageExists ? existing.messages : [...existing.messages, messageWithListing],
+            unreadCount: messageExists ? existing.unreadCount : existing.unreadCount + 1
           };
 
-          // Move updated conversation to top
-          const [updated] = updatedConversations.splice(existingConvIndex, 1);
-          return [updated, ...updatedConversations];
+          // Move to top
+          const [moved] = updated.splice(existingIndex, 1);
+          return [moved, ...updated];
         } else {
-          // Create new conversation
-          const isFromOtherParty = (isUserBuyer && newMessage.seller_email === otherPartyEmail) ||
-                                  (isUserSeller && newMessage.buyer_email === otherPartyEmail);
-          
-          const newConversation = {
+          console.log('➕ Creating new conversation in list');
+          // New conversation
+          return [{
             listingId: newMessage.listing_id,
             listingTitle: listing.title,
             listingPrice: listing.price,
@@ -477,18 +612,17 @@ export default function MessagesPage() {
             otherPartyName: otherPartyEmail.split('@')[0],
             lastMessage: newMessage.message,
             lastMessageTime: newMessage.created_at,
-            unreadCount: isFromOtherParty ? 1 : 0,
+            unreadCount: 1,
             messages: [messageWithListing]
-          };
-
-          return [newConversation, ...prevConversations];
+          }, ...prevConversations];
         }
       });
 
-      // Trigger global message update for header
+      // Global update
       window.dispatchEvent(new CustomEvent('messagesChanged'));
+
     } catch (error) {
-      console.error('Error handling realtime message:', error);
+      console.error('❌ REAL-TIME ERROR:', error);
     }
   };
 
@@ -510,101 +644,116 @@ export default function MessagesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-indigo-50">
-      <div className="container mx-auto p-4">
-        {/* Fixed height container like messenger */}
-        <div className="h-[calc(100vh-140px)] max-h-[800px] grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Conversations List */}
-          <div className={`${selectedConversation ? 'hidden lg:block' : 'block'} lg:col-span-1`}>
-            <Card className="h-full shadow-xl border-0 bg-white/70 backdrop-blur-sm flex flex-col">
-              <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg flex-shrink-0">
-                <CardTitle className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                    <MessageSquare className="h-5 w-5" />
+    <div className="h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 overflow-hidden">
+      <Header />
+      <div className="flex flex-col lg:flex-row relative h-[calc(100vh-72px)]">
+        {/* Animated background elements */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+          <div className="absolute top-20 left-10 w-16 h-16 sm:w-32 sm:h-32 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full animate-float"></div>
+          <div className="absolute top-40 right-10 sm:right-20 w-12 h-12 sm:w-24 sm:h-24 bg-gradient-to-br from-pink-400/10 to-yellow-400/10 rounded-full animate-float-delayed"></div>
+          <div className="absolute bottom-32 left-1/4 w-20 h-20 sm:w-40 sm:h-40 bg-gradient-to-br from-green-400/10 to-teal-400/10 rounded-full animate-float-slow"></div>
+        </div>
+        
+        <div className="relative z-10 flex flex-col lg:flex-row w-full h-full overflow-hidden">
+          {/* Messages Sidebar */}
+          <div className={`${selectedConversation ? 'hidden lg:block' : 'block'} w-full lg:w-80 bg-white/80 backdrop-blur-sm border-r border-gray-200 h-full overflow-y-auto`}>
+            <div className="p-4 sm:p-6 lg:p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-2xl flex items-center justify-center shadow-lg">
+                  <MessageSquare className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-gray-900">Messages</h1>
+                  <p className="text-sm text-gray-600">Stay connected with sellers and buyers</p>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-sm text-gray-600 font-medium">Loading conversations...</p>
                   </div>
-                  Messages
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 flex-1 overflow-hidden">
-                {conversations.length === 0 ? (
-                  <div className="p-8 text-center h-full flex flex-col justify-center">
-                    <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <MessageSquare className="h-8 w-8 text-gray-400" />
-                    </div>
-                    <p className="text-gray-600 font-medium">No messages yet</p>
-                    <p className="text-sm text-gray-500 mt-2">
-                      Start a conversation by messaging a seller
-                    </p>
+                </div>
+              ) : conversations.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <MessageSquare className="h-8 w-8 text-gray-400" />
                   </div>
-                ) : (
-                  <div className="h-full overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-                    {conversations.map((conversation) => (
-                      <div
-                        key={`${conversation.listingId}-${conversation.otherPartyEmail}`}
-                        onClick={() => handleSelectConversation(conversation)}
-                        className={`p-4 border-b cursor-pointer transition-all duration-200 hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 ${
-                          selectedConversation?.listingId === conversation.listingId &&
-                          selectedConversation?.otherPartyEmail === conversation.otherPartyEmail
-                            ? 'bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200' 
-                            : 'hover:shadow-md'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="relative">
-                            <img
-                              src={conversation.listingImage}
-                              alt={conversation.listingTitle}
-                              className="w-12 h-12 object-cover rounded-lg shadow-md"
-                            />
-                            {conversation.unreadCount > 0 && (
-                              <div className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                                <span className="text-xs text-white font-bold">
-                                  {conversation.unreadCount}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <h4 className="font-semibold text-sm truncate text-gray-900">
-                                {conversation.listingTitle}
-                              </h4>
-                              <span className="text-xs text-gray-500 flex-shrink-0">
-                                {formatTime(conversation.lastMessageTime)}
+                  <p className="text-gray-600 font-medium mb-2">No messages yet</p>
+                  <p className="text-sm text-gray-500">
+                    Start a conversation by messaging a seller
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {conversations.map((conversation) => (
+                    <div
+                      key={`${conversation.listingId}-${conversation.otherPartyEmail}`}
+                      onClick={() => handleSelectConversation(conversation)}
+                      className={`p-4 rounded-2xl cursor-pointer transition-all duration-200 hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 hover:shadow-md ${
+                        selectedConversation?.listingId === conversation.listingId &&
+                        selectedConversation?.otherPartyEmail === conversation.otherPartyEmail
+                          ? 'bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 shadow-md' 
+                          : 'bg-white/50 border border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="relative">
+                          <img
+                            src={conversation.listingImage}
+                            alt={conversation.listingTitle}
+                            className="w-12 h-12 object-cover rounded-lg shadow-md"
+                          />
+                          {conversation.unreadCount > 0 && (
+                            <div className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                              <span className="text-xs text-white font-bold">
+                                {conversation.unreadCount}
                               </span>
                             </div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <div className="w-4 h-4 bg-gradient-to-br from-blue-400 to-purple-400 rounded-full flex items-center justify-center">
-                                <User className="w-2 h-2 text-white" />
-                              </div>
-                              <p className="text-sm text-gray-600">
-                                {conversation.otherPartyName}
-                              </p>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <h4 className="font-semibold text-sm truncate text-gray-900">
+                              {conversation.listingTitle}
+                            </h4>
+                            <span className="text-xs text-gray-500 flex-shrink-0">
+                              {formatTime(conversation.lastMessageTime)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="w-4 h-4 bg-gradient-to-br from-blue-400 to-purple-400 rounded-full flex items-center justify-center">
+                              <User className="w-2 h-2 text-white" />
                             </div>
-                            <p className="text-sm text-gray-500 truncate">
-                              {conversation.lastMessage}
+                            <p className="text-sm text-gray-600">
+                              {conversation.otherPartyName}
                             </p>
                           </div>
+                          <p className="text-sm text-gray-500 truncate">
+                            {conversation.lastMessage}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Chat Area - Messenger-style fixed height */}
-          <div className={`${selectedConversation ? 'block' : 'hidden lg:block'} lg:col-span-2`}>
+          {/* Chat Area */}
+          <div className={`${selectedConversation ? 'block' : 'hidden lg:block'} flex-1 bg-gradient-to-br from-gray-50 via-white to-blue-50 h-full flex flex-col overflow-hidden`}>
             {selectedConversation ? (
-              <Card className="h-full shadow-xl border-0 bg-white/70 backdrop-blur-sm flex flex-col">
-                <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg flex-shrink-0 py-3">
+              <>
+                {/* Chat Header - Fixed positioning */}
+                <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 shadow-lg flex-shrink-0 border-b">
                   <div className="flex items-center gap-3">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => setSelectedConversation(null)}
-                      className="lg:hidden text-white hover:bg-white/20"
+                      className="lg:hidden text-white hover:bg-white/20 p-2"
                     >
                       <ArrowLeft className="h-4 w-4" />
                     </Button>
@@ -613,76 +762,74 @@ export default function MessagesPage() {
                       alt={selectedConversation.listingTitle}
                       className="w-10 h-10 object-cover rounded-lg shadow-md"
                     />
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-sm">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-base truncate">
                         {selectedConversation.listingTitle}
                       </h3>
-                      <p className="text-sm text-blue-100">
+                      <p className="text-sm text-blue-100 truncate">
                         Chat with {selectedConversation.otherPartyName}
                       </p>
                     </div>
-                    <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
+                    <Badge variant="secondary" className="bg-white/20 text-white border-white/30 flex-shrink-0">
                       ${selectedConversation.listingPrice}
                     </Badge>
                   </div>
-                </CardHeader>
+                </div>
                 
-                {/* Messages Container - Fixed height with scroll like messenger */}
-                <div className="flex-1 min-h-0 bg-gradient-to-b from-white/50 to-white/30 relative">
-                  <div className="absolute inset-0 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent p-4">
-                    <div className="space-y-3">
-                      {selectedConversation.messages.length === 0 ? (
-                        <div className="flex items-center justify-center h-full min-h-[200px]">
-                          <div className="text-center text-gray-500">
-                            <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                            <p className="font-medium">No messages yet</p>
-                            <p className="text-sm">Start the conversation!</p>
-                          </div>
+                {/* Messages Container - Scrollable area */}
+                <div className="flex-1 overflow-y-auto bg-white/30 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                  <div className="p-4 space-y-3 min-h-full">
+                    {selectedConversation.messages.length === 0 ? (
+                      <div className="flex items-center justify-center h-full min-h-[400px]">
+                        <div className="text-center text-gray-500">
+                          <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                          <p className="font-medium text-lg">No messages yet</p>
+                          <p className="text-sm">Start the conversation!</p>
                         </div>
-                      ) : (
-                        selectedConversation.messages.map((message) => {
-                          const isFromCurrentUser = isMessageFromCurrentUser(message);
-                          
-                          return (
+                      </div>
+                    ) : (
+                      selectedConversation.messages.map((message) => {
+                        const isFromCurrentUser = isMessageFromCurrentUser(message);
+                        
+                        return (
+                          <div
+                            key={message.id}
+                            className={`flex ${isFromCurrentUser ? 'justify-end' : 'justify-start'} mb-3`}
+                          >
                             <div
-                              key={message.id}
-                              className={`flex ${isFromCurrentUser ? 'justify-end' : 'justify-start'} mb-2`}
+                              className={`max-w-[75%] sm:max-w-[60%] px-4 py-3 rounded-2xl shadow-sm transition-all duration-200 ${
+                                isFromCurrentUser
+                                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-br-md'
+                                  : 'bg-white text-gray-900 border border-gray-200 rounded-bl-md'
+                              }`}
                             >
-                              <div
-                                className={`max-w-[75%] sm:max-w-[60%] px-4 py-2 rounded-2xl shadow-sm transition-all duration-200 ${
-                                  isFromCurrentUser
-                                    ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-br-md'
-                                    : 'bg-white text-gray-900 border border-gray-200 rounded-bl-md'
+                              <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">
+                                {message.message}
+                              </p>
+                              <p
+                                className={`text-xs mt-2 ${
+                                  isFromCurrentUser ? 'text-blue-100' : 'text-gray-500'
                                 }`}
                               >
-                                <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">
-                                  {message.message}
-                                </p>
-                                <p
-                                  className={`text-xs mt-1 ${
-                                    isFromCurrentUser ? 'text-blue-100' : 'text-gray-500'
-                                  }`}
-                                >
-                                  {formatTime(message.created_at)}
-                                </p>
-                              </div>
+                                {formatTime(message.created_at)}
+                              </p>
                             </div>
-                          );
-                        })
-                      )}
-                      <div ref={messagesEndRef} />
-                    </div>
+                          </div>
+                        );
+                      })
+                    )}
+                    <div ref={messagesEndRef} />
                   </div>
                 </div>
 
-                {/* Message Input - Fixed at bottom like messenger */}
-                <div className="border-t bg-white/80 backdrop-blur-sm p-3 flex-shrink-0">
-                  <form onSubmit={handleSendMessage} className="flex gap-2 items-end">
+                {/* Message Input - Fixed at bottom */}
+                <div className="border-t bg-white shadow-lg p-4 flex-shrink-0">
+                  <form onSubmit={handleSendMessage} className="flex items-center gap-3">
                     <Input
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
-                      placeholder="Type a message..."
-                      className="flex-1 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-full px-4 py-2 min-h-[40px] resize-none"
+                      placeholder="Aa"
+                      className="flex-1 bg-gray-100 border-0 focus:ring-2 focus:ring-blue-500 rounded-full px-4 py-3 min-h-[44px] text-base placeholder:text-gray-500"
                       disabled={sending}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
@@ -694,27 +841,25 @@ export default function MessagesPage() {
                     <Button 
                       type="submit" 
                       disabled={sending || !newMessage.trim()}
-                      className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white border-0 rounded-full w-10 h-10 p-0 shadow-lg transition-all duration-200 disabled:opacity-50"
+                      className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white border-0 rounded-full w-11 h-11 p-0 shadow-lg transition-all duration-200 disabled:opacity-50 flex-shrink-0"
                     >
                       <Send className="h-4 w-4" />
                     </Button>
                   </form>
                 </div>
-              </Card>
+              </>
             ) : (
-              <Card className="h-full hidden lg:block shadow-xl border-0 bg-white/70 backdrop-blur-sm">
-                <CardContent className="h-full flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <MessageSquare className="h-8 w-8 text-white" />
-                    </div>
-                    <p className="text-gray-600 font-medium">Select a conversation to start messaging</p>
-                    <p className="text-sm text-gray-500 mt-2">
-                      Choose from your conversations on the left
-                    </p>
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="text-center">
+                  <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl">
+                    <MessageSquare className="h-10 w-10 text-white" />
                   </div>
-                </CardContent>
-              </Card>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-3">Select a conversation</h2>
+                  <p className="text-gray-600 text-lg">
+                    Choose from your conversations on the left to start messaging
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         </div>
